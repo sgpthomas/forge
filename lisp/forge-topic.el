@@ -351,6 +351,7 @@ identifier."
                              (cond (unread-p 'forge-topic-unread)
                                    (closed   'forge-topic-closed)
                                    (t        'forge-topic-open)))))
+    (forge--insert-workflow-status topic)
     (forge--insert-topic-labels topic)
     (insert "\n")
     (magit-log-format-author-margin
@@ -522,6 +523,32 @@ is called and a topic object is returned if available."
 
 (defvar-keymap forge-topic-labels-section-map
   "<remap> <magit-edit-thing>" #'forge-edit-topic-labels)
+
+(defun forge--insert-workflow-status (topic)
+  (when (forge--childp topic 'forge-pullreq)
+    (let* ((checks (forge-sql
+                    [:select [name conclusion] 
+                             :from workflow
+                             :where (= commit $s1)]
+                    (oref topic head-rev)))
+           (passed (mapcar
+                    (lambda (v)
+                      (if (string= (cadr v) "SUCCESS") 1 0))
+                    checks))
+           (n-passed (apply #'+ passed))
+           (total (length checks))
+           (text (format "(%s/%s)" n-passed total))
+           (color (if (equal n-passed total) "#1f883d" "#D1242F"))
+           )
+      (when (> total 0)
+        (insert " ")
+        (insert text)
+        (let ((o (make-overlay (- (point) (length text)) (point))))
+          (overlay-put o 'priority 2)
+          (overlay-put o 'evaporate t)
+          (overlay-put o 'font-lock-face
+                       `((:background ,color :foreground "white")
+                         forge-topic-label)))))))
 
 (cl-defun forge-insert-topic-labels
     (&optional (topic forge-buffer-topic))

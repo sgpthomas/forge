@@ -51,7 +51,7 @@
    (object-class :initform 'forge-repository)
    (file         :initform 'forge-database-file)
    (schemata     :initform 'forge--db-table-schemata)
-   (version      :initform 9)))
+   (version      :initform 10)))
 
 (defvar forge--override-connection-class nil)
 
@@ -346,6 +346,15 @@
       [pullreq] :references pullreq [id]
       :on-delete :cascade))
 
+    (workflow
+     [(class :not-null)
+      (id :not-null :primary-key)
+      commit
+      name
+      conclusion
+      ;; runs
+      ])
+
     (revnote
      [(class :not-null)
       (id :not-null :primary-key)
@@ -428,7 +437,13 @@
         (emacsql db [:alter-table pullreq :add-column their-id :default nil])
         (emacsql db [:alter-table issue   :add-column their-id :default nil])
         (closql--db-set-version db (setq version 9))
-        (message "Upgrading Forge database from version 8 to 9...done")))
+        (message "Upgrading Forge database from version 8 to 9...done"))
+      (when (= version 9)
+        (message "Upgrading Forge database from version 9 to 10...")
+        (emacsql db [:create-table workflow $S1]
+                 (cdr (assq 'workflow forge--db-table-schemata)))
+        (closql--db-set-version db (setq version 10))
+        (message "Upgrading Forge database from version 9 to 10...done")))
     (cl-call-next-method)))
 
 (defun forge--backup-database (db)

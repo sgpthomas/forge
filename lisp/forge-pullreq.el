@@ -88,7 +88,19 @@
    (updated              :initarg :updated)
    (body                 :initarg :body)
    (edits)
-   (reactions)
+   (reactions)))
+
+(defclass forge-workflow (forge-topic)
+  ((closql-table         :initform 'workflow)
+   (closql-primary-key   :initform 'id)
+   (closql-order-by      :initform [(asc id)])
+   (closql-class-prefix  :initform "forge-")
+   ;; actual data
+   (id                   :initarg :id)
+   (commit               :initarg :commit)
+   (name                 :initarg :name)
+   (conclusion           :initarg :conclusion)
+   ;; (runs                 :closql-table (workflow-status workflow-name))
    ))
 
 ;;; Query
@@ -118,6 +130,11 @@
   (closql-get (forge-db)
               (oref post pullreq)
               'forge-pullreq))
+
+(cl-defmethod forge-get-workflow ((repo forge-repository) commit-id title)
+  (closql-get (forge-db)
+              (forge--object-id 'forge-workflow repo (format "%s:%s" commit-id title))
+              'forge-workflow))
 
 (cl-defmethod forge-ls-pullreqs ((repo forge-repository) &optional type select)
   (forge-ls-topics repo 'forge-pullreq type select))

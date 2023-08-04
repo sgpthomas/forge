@@ -192,6 +192,22 @@
     (mapc (lambda (e) (forge--update-pullreq repo e bump)) data)))
 
 (cl-defmethod forge--update-pullreq ((repo forge-github-repository) data bump)
+  (forge--fetch-workflow
+   repo
+   (alist-get 'id data)
+   (lambda (data)
+     (closql-with-transaction (forge-db)
+       (let-alist data
+         (let* ((workflow-id (forge--object-id 'forge-workflow repo
+                                               (format "%s:%s" .commit-id .name)))
+                (workflow (or (forge-get-workflow repo .commit-id .name)
+                              (closql-insert
+                               (forge-db)
+                               (forge-workflow :id workflow-id)))))
+           (oset workflow name       .name)
+           (oset workflow commit     .commit-id)
+           (oset workflow conclusion .conclusion))))))
+
   (closql-with-transaction (forge-db)
     (let-alist data
       (let* ((pullreq-id (forge--object-id 'forge-pullreq repo .number))
@@ -490,6 +506,48 @@
                  (message "Adding %s..." (oref repo name))
                  (forge--pull repo nil cb))))
     (funcall cb)))
+
+(cl-defmethod forge--fetch-workflow ((repo forge-github-repository) pr-id callback)
+  (ghub--graphql-vacuum
+   '(query
+     (node [(id $pr ID!)]
+           (\...\ on\ PullRequest
+            id
+            (commits [(last 1)]
+                     (edges
+                      (node
+                       (commit
+                        oid
+                        (checkSuites
+                         [(last 3)]
+                         (nodes
+                          conclusion
+                          (workflowRun
+                           (workflow name)
+                           (checkSuite conclusion
+                                       (checkRuns
+                                        [(last 10)]
+                                        (edges (node status name))))))))))))))
+   `((pr . ,pr-id))
+   (lambda (data)
+     (let-alist data
+       (let-alist (car .node.commits)
+         (let ((oid .commit.oid)
+               (suites .commit.checkSuites.nodes))
+           (dolist (run suites)
+             (let-alist run
+               (funcall callback
+                        `((name . ,.workflowRun.workflow.name)
+                          (commit-id . ,oid)
+                          (conclusion . ,.conclusion)
+                          (runs . ,(mapcar
+                                    (lambda (sub-run)
+                                      (let-alist sub-run
+                                        (cons .name .status)))
+                                    .workflowRun.checkSuite.checkRuns))))))))))
+   nil
+   :host (oref repo apihost)
+   :auth 'forge))
 
 ;;; Mutations
 
